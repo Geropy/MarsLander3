@@ -94,9 +94,7 @@ struct Board
 	Ship ship;
 	static random_device rd;
 	static mt19937 gen;
-	static uniform_int_distribution<> dis3;
-	static uniform_int_distribution<> dis2up;
-	static uniform_int_distribution<> dis2down;
+	static discrete_distribution<> dis;
 
 	Board(Terrain& terrain)
 		: terrain(terrain)
@@ -112,20 +110,67 @@ struct Board
 		{
 			++move;
 			// Choose an action, start with angle
+			// Favor angles closer to 0
 			switch (ship.angle)
 			{
 			case -90:
-				ship.angle += dis2up(gen) * 15;
+				dis.param({ 1,19 });
+				ship.angle += dis(gen) * 15;
+				break;
+			case -75:
+				dis.param({ 1,5,25 });
+				ship.angle += (dis(gen) - 1) * 15;
+				break;
+			case -60:
+				dis.param({ 1,4,16 });
+				ship.angle += (dis(gen) - 1) * 15;
+				break;
+			case -45:
+				dis.param({ 1,3,9 });
+				ship.angle += (dis(gen) - 1) * 15;
+				break;
+			case -30:
+				dis.param({ 1,2,4 });
+				ship.angle += (dis(gen) - 1) * 15;
+				break;
+			case -15:
+				dis.param({ 1,1.5,2.25 });
+				ship.angle += (dis(gen) - 1) * 15;
+				break;
+			case 0:
+				dis.param({ 1,1,1 });
+				ship.angle += (dis(gen) - 1) * 15;
 				break;
 			case 90:
-				ship.angle += dis2down(gen) * 15;
+				dis.param({ 1,19 });
+				ship.angle -= dis(gen) * 15;
+				break;
+			case 75:
+				dis.param({ 1,5,25 });
+				ship.angle -= (dis(gen) - 1) * 15;
+				break;
+			case 60:
+				dis.param({ 1,4,16 });
+				ship.angle -= (dis(gen) - 1) * 15;
+				break;
+			case 45:
+				dis.param({ 1,3,9 });
+				ship.angle -= (dis(gen) - 1) * 15;
+				break;
+			case 30:
+				dis.param({ 1,2,4 });
+				ship.angle -= (dis(gen) - 1) * 15;
+				break;
+			case 15:
+				dis.param({ 1,1.5,2.25 });
+				ship.angle -= (dis(gen) - 1) * 15;
 				break;
 			default:
-				ship.angle += dis3(gen) * 15;
 				break;
 			}
 
 			// Now choose thrust
+			// Favor higher thrust
 			if (ship.fuel <= 0) { ship.thrust = 0; }
 
 			else
@@ -133,13 +178,26 @@ struct Board
 				switch (ship.thrust)
 				{
 				case 0:
-					ship.thrust += dis2up(gen);
+					dis.param({ 1,4 });
+					ship.thrust += dis(gen);
+					break;
+				case 1:
+					dis.param({ 1,2.5, 6.25 });
+					ship.thrust += dis(gen);
+					break;
+				case 2:
+					dis.param({ 1,2,4 });
+					ship.thrust += dis(gen) - 1;
+					break;
+				case 3:
+					dis.param({ 1,1.5,2.25});
+					ship.thrust += dis(gen) - 1;
 					break;
 				case 4:
-					ship.thrust += dis2down(gen);
+					dis.param({ 2,1 });
+					ship.thrust -= dis(gen);
 					break;
 				default:
-					ship.thrust += dis3(gen);
 					break;
 				}
 			}
@@ -169,9 +227,7 @@ struct Board
 
 random_device Board::rd;
 mt19937 Board::gen(rd());
-uniform_int_distribution<> Board::dis3(-1, 1);
-uniform_int_distribution<> Board::dis2up(0, 1);
-uniform_int_distribution<> Board::dis2down(-1, 0);
+discrete_distribution<> Board::dis;
 
 
 int main()
