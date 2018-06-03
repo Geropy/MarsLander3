@@ -190,11 +190,11 @@ struct Board
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 3:
-					dis.param({ 1,1.5,2.25});
+					dis.param({ 1,1.8,3.24});
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 4:
-					dis.param({ 2,1 });
+					dis.param({ 3,1 });
 					ship.thrust -= dis(gen);
 					break;
 				default:
@@ -209,17 +209,26 @@ struct Board
 			ship.advanceState();
 
 			// See if the game is over
-			// Has the ship collided with terrain?
-			for (int i = 1; i < terrain.points.size(); ++i)
+			// Have I left the grid?
+			if (ship.pos[0] < 0 || ship.pos[0] > 3000 || ship.pos[1] < 0 || ship.pos[1] > 7000)
 			{
-				if (collision(terrain.points[i - 1], terrain.points[i], ship.pos, prevPos))
-				{
-					// I should eventually check if I collided with the landing, since this is actually good
-					finished = true;
-					cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
-					break;
-				}
+				finished = true;
 			}
+
+			// Has the ship collided with terrain?
+			if (!finished)
+			{
+				for (int i = 1; i < terrain.points.size(); ++i)
+				{
+					if (collision(terrain.points[i - 1], terrain.points[i], ship.pos, prevPos))
+					{
+						// I should eventually check if I collided with the landing, since this is actually good
+						finished = true;
+						cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
+						break;
+					}
+				}
+			}	
 		}
 
 	}
