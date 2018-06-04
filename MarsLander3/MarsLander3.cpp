@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <random>
 #include <map>
+#include <set>
+#include <chrono>
 
 using namespace std;
 static map<int, float> cosMap;
@@ -22,8 +24,35 @@ struct Move
 	{}
 };
 
+struct SimResult
+{
+	Move firstMove;
+	float score;
+
+	SimResult(Move move, float score)
+		: firstMove(move)
+		, score(score)
+	{
+	}
+
+	SimResult()
+		: firstMove(Move(0,0))
+		, score(-100.0f)
+	{}
+
+};
+
+struct SimCmp
+{
+	bool operator() (const SimResult& lhs, const SimResult& rhs)
+	{
+		return lhs.score > rhs.score;
+	}
+};
+
 static queue<Move> moves;
 // Going for a genetic approach
+
 
 int orientation(const array<int, 2> &  p, const array<int, 2> &  q, const array<int, 2> &  r)
 {
@@ -74,6 +103,7 @@ struct Ship
 	int fuel, angle, thrust;
 	float vSpeed, hSpeed;
 	array<int, 2> pos;
+	array<int, 2> startingPos;
 
 	void advanceState()
 	{
@@ -100,11 +130,13 @@ struct Board
 		: terrain(terrain)
 	{}
 
-	void randomSim()
+	SimResult randomSim()
 	{
 		// This simulates a game with random actions until it ends (ship collides with terrain)
 		bool finished = false;
+		bool first = true;
 		int move = 0;
+		Move firstMove(0, 0);
 
 		while (!finished)
 		{
@@ -190,7 +222,7 @@ struct Board
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 3:
-					dis.param({ 1,1.8,3.24});
+					dis.param({ 1,1.8,3.24 });
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 4:
@@ -202,7 +234,12 @@ struct Board
 				}
 			}
 
-			moves.emplace(ship.thrust, ship.angle);
+			if (first)
+			{
+				first = false;
+				firstMove.angle = ship.angle;
+				firstMove.thrust = ship.thrust;
+			}
 
 			// Advance the state of the ship
 			array<int, 2> prevPos = ship.pos;
@@ -224,13 +261,43 @@ struct Board
 					{
 						// I should eventually check if I collided with the landing, since this is actually good
 						finished = true;
-						cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
+						//cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
 						break;
 					}
 				}
-			}	
+			}
 		}
 
+		// Calculate the score of the position
+		float score = calculateScore(move);
+
+		// Return the info needed
+		return SimResult(firstMove, score);
+
+	}
+
+	float calculateScore(int numMoves) const
+	{
+		// Obviously, if I land successfully the score should be very high
+		if (ship.pos[1] > terrain.landingLeft && ship.pos[1] < terrain.landingRight && ship.pos[0] - terrain.landingHeight < 50)
+		{
+			if (ship.angle == 0 && abs(ship.vSpeed) < 40.0f && abs(ship.hSpeed) < 20.0f)
+			{
+				return 999999999.0f;
+			}
+		}
+		
+		// The score is based on a few factors
+		// crashing close to landing is good
+		// high fuel is good
+		// surviving long time is good
+
+		float dist1 = abs(ship.pos[0] - ship.startingPos[0]) + abs(ship.pos[1] - ship.startingPos[1]);
+		float dist2 = max(1, abs(ship.pos[0] - terrain.landingHeight) + abs(ship.pos[1] - (terrain.landingLeft + terrain.landingRight) / 2));
+
+		float relativeDist = dist1 / dist2;
+
+		return (numMoves * relativeDist) + ship.fuel;
 	}
 };
 
@@ -269,7 +336,7 @@ int main()
 	sinMap[30] = -0.5f;
 	sinMap[15] = -0.2588f;
 
-
+	set<SimResult, SimCmp> sortedResults;
 
 	Terrain terrain;
 	int surfaceN; // the number of points used to draw the surface of Mars.
@@ -304,6 +371,10 @@ int main()
 	// game loop is 1 second long
 	while (1) {
 
+		auto start = chrono::high_resolution_clock::now();
+		int sims = 0;
+		sortedResults.clear();
+
 		cin >> X >> Y >> hSpeed >> vSpeed >> fuel >> rotate >> power; cin.ignore();
 		board.ship.angle = rotate;
 		board.ship.pos[0] = Y;
@@ -313,20 +384,40 @@ int main()
 		board.ship.fuel = fuel;
 		board.ship.thrust = power;
 
-		// Start by simulating an entire run using random actions
 		if (first)
 		{
-			board.randomSim();
+			board.ship.startingPos[0] = Y;
+			board.ship.startingPos[1] = X;
 			first = false;
 		}
 
+		SimResult bestResult;
 
+		while (std::chrono::duration_cast<std::chrono::milliseconds>(chrono::high_resolution_clock::now() - start).count() < 95)
+		{
+			++sims;
+			
+			// Start by simulating an entire run using random actions
+			SimResult result = board.randomSim();
+			//sortedResults.insert(result);
 
+			if (result.score > bestResult.score)
+			{
+				bestResult = result;
+			}
 
-		// rotate power. rotate is the desired rotation angle. power is the desired thrust power.
-		Move move = moves.front();
-		moves.pop();
-		cerr << moves.size() << endl;
-		cout << move.angle << " " << move.thrust << endl;
+			//Reset the ship
+			board.ship.pos[0] = Y;
+			board.ship.pos[1] = X;
+			board.ship.hSpeed = hSpeed;
+			board.ship.vSpeed = vSpeed;
+			board.ship.fuel = fuel;
+			board.ship.thrust = power;
+		}
+
+		// Execute the best move
+		cerr << sims << " sims" << endl;
+		//SimResult best = *(sortedResults.begin());
+		cout << bestResult.firstMove.angle << " " << bestResult.firstMove.thrust << endl;
 	}
 }
