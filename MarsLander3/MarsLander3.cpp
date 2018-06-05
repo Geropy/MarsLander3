@@ -36,7 +36,7 @@ struct SimResult
 	}
 
 	SimResult()
-		: firstMove(Move(0,0))
+		: firstMove(Move(0, 0))
 		, score(-100.0f)
 	{}
 
@@ -93,6 +93,8 @@ bool collision(const array<int, 2> & terrain1, const array<int, 2> & terrain2, c
 struct Terrain
 {
 	vector<array<int, 2>> points;
+	vector<int> segmentScores;
+	int landSegment;
 	int landingLeft;
 	int landingRight;
 	int landingHeight;
@@ -138,6 +140,8 @@ struct Board
 		int move = 0;
 		Move firstMove(0, 0);
 
+		int collisionSegment = -1;
+
 		while (!finished)
 		{
 			++move;
@@ -162,15 +166,15 @@ struct Board
 				ship.angle += (dis(gen) - 1) * 15;
 				break;
 			case -30:
-				dis.param({ 1,2,4 });
+				dis.param({ 1,2.5,5 });
 				ship.angle += (dis(gen) - 1) * 15;
 				break;
 			case -15:
-				dis.param({ 1,1.5,2.25 });
+				dis.param({ 1,2,4 });
 				ship.angle += (dis(gen) - 1) * 15;
 				break;
 			case 0:
-				dis.param({ 1,1,1 });
+				dis.param({ 1,2,1 });
 				ship.angle += (dis(gen) - 1) * 15;
 				break;
 			case 90:
@@ -190,11 +194,11 @@ struct Board
 				ship.angle -= (dis(gen) - 1) * 15;
 				break;
 			case 30:
-				dis.param({ 1,2,4 });
+				dis.param({ 1,2.5,5 });
 				ship.angle -= (dis(gen) - 1) * 15;
 				break;
 			case 15:
-				dis.param({ 1,1.5,2.25 });
+				dis.param({ 1,2,4 });
 				ship.angle -= (dis(gen) - 1) * 15;
 				break;
 			default:
@@ -210,23 +214,23 @@ struct Board
 				switch (ship.thrust)
 				{
 				case 0:
-					dis.param({ 1,4 });
+					dis.param({ 1,14 });
 					ship.thrust += dis(gen);
 					break;
 				case 1:
-					dis.param({ 1,2.5, 6.25 });
-					ship.thrust += dis(gen);
+					dis.param({ 1,7, 49});
+					ship.thrust += dis(gen) - 1;
 					break;
 				case 2:
-					dis.param({ 1,2,4 });
+					dis.param({ 1,4,16 });
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 3:
-					dis.param({ 1,1.8,3.24 });
+					dis.param({ 1,2,4 });
 					ship.thrust += dis(gen) - 1;
 					break;
 				case 4:
-					dis.param({ 3,1 });
+					dis.param({ 4,1 });
 					ship.thrust -= dis(gen);
 					break;
 				default:
@@ -261,6 +265,7 @@ struct Board
 					{
 						// I should eventually check if I collided with the landing, since this is actually good
 						finished = true;
+						collisionSegment = i - 1;
 						//cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
 						break;
 					}
@@ -269,14 +274,14 @@ struct Board
 		}
 
 		// Calculate the score of the position
-		float score = calculateScore(move);
+		float score = calculateScore(collisionSegment);
 
 		// Return the info needed
 		return SimResult(firstMove, score);
 
 	}
 
-	float calculateScore(int numMoves) const
+	float calculateScore(int collisionSegment) const
 	{
 		// Obviously, if I land successfully the score should be very high
 		if (ship.pos[1] > terrain.landingLeft && ship.pos[1] < terrain.landingRight && ship.pos[0] - terrain.landingHeight < 50)
@@ -286,18 +291,27 @@ struct Board
 				return 999999999.0f;
 			}
 		}
-		
+
 		// The score is based on a few factors
 		// crashing close to landing is good
 		// high fuel is good
-		// surviving long time is good
+		float dist;
+		if (collisionSegment < terrain.landSegment)
+		{
+			dist = abs(ship.pos[0] - terrain.points[collisionSegment + 1][0]) + abs(ship.pos[1] - terrain.points[collisionSegment + 1][1]);
+		}
 
-		float dist1 = abs(ship.pos[0] - ship.startingPos[0]) + abs(ship.pos[1] - ship.startingPos[1]);
-		float dist2 = max(1, abs(ship.pos[0] - terrain.landingHeight) + abs(ship.pos[1] - (terrain.landingLeft + terrain.landingRight) / 2));
+		else if (collisionSegment > terrain.landSegment)
+		{
+			dist = abs(ship.pos[0] - terrain.points[collisionSegment][0]) + abs(ship.pos[1] - terrain.points[collisionSegment][1]);
+		}
 
-		float relativeDist = dist1 / dist2;
+		else
+		{
+			dist = abs(ship.pos[0] - terrain.landingHeight) + abs(ship.pos[1] - (terrain.landingLeft + terrain.landingRight) / 2);
+		}
 
-		return (numMoves * relativeDist) + ship.fuel;
+		return terrain.segmentScores[collisionSegment] * 6000.0f - dist + ship.fuel;
 	}
 };
 
@@ -341,6 +355,7 @@ int main()
 	Terrain terrain;
 	int surfaceN; // the number of points used to draw the surface of Mars.
 	cin >> surfaceN; cin.ignore();
+	int landSegment = -1;
 	for (int i = 0; i < surfaceN; i++) {
 		int landX; // X coordinate of a surface point. (0 to 6999)
 		int landY; // Y coordinate of a surface point. By linking all the points together in a sequential fashion, you form the surface of Mars.
@@ -354,7 +369,20 @@ int main()
 			terrain.landingHeight = landY;
 			terrain.landingLeft = min(landX, lastPoint[1]);
 			terrain.landingRight = max(landX, lastPoint[1]);
+			landSegment = i - 1;
+			terrain.landSegment = i - 1;
 		}
+	}
+
+	// Give scores to each segment
+	for (int i = 0; i < landSegment; i++)
+	{
+		terrain.segmentScores.push_back(i + 10);
+	}
+	terrain.segmentScores.push_back(landSegment + 10);
+	for (int i = landSegment + 1; i < surfaceN - 1; i++)
+	{
+		terrain.segmentScores.push_back(2 * landSegment - i + 10);
 	}
 
 	Board board(terrain);
@@ -367,6 +395,7 @@ int main()
 	int power; // the thrust power (0 to 4).
 
 	bool first = true;
+	SimResult bestResult;
 
 	// game loop is 1 second long
 	while (1) {
@@ -391,12 +420,12 @@ int main()
 			first = false;
 		}
 
-		SimResult bestResult;
+		bestResult.score = -99999999.0f;
 
 		while (std::chrono::duration_cast<std::chrono::milliseconds>(chrono::high_resolution_clock::now() - start).count() < 95)
 		{
 			++sims;
-			
+
 			// Start by simulating an entire run using random actions
 			SimResult result = board.randomSim();
 			//sortedResults.insert(result);
@@ -407,6 +436,7 @@ int main()
 			}
 
 			//Reset the ship
+			board.ship.angle = rotate;
 			board.ship.pos[0] = Y;
 			board.ship.pos[1] = X;
 			board.ship.hSpeed = hSpeed;
