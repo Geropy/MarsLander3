@@ -9,6 +9,8 @@
 #include <set>
 #include <chrono>
 
+#pragma GCC optimize("-O3,inline,omit-frame-pointer,unroll-loops")
+
 using namespace std;
 static map<int, float> cosMap;
 static map<int, float> sinMap;
@@ -26,18 +28,17 @@ struct Move
 
 struct SimResult
 {
-	Move firstMove;
+	queue<Move> moves;
 	float score;
+	array<int, 2> crashPoint;
 
-	SimResult(Move move, float score)
-		: firstMove(move)
-		, score(score)
+	SimResult(float score)
+		: score(score)
 	{
 	}
 
 	SimResult()
-		: firstMove(Move(0, 0))
-		, score(-100.0f)
+		: score(-100.0f)
 	{}
 
 };
@@ -50,16 +51,12 @@ struct SimCmp
 	}
 };
 
-static queue<Move> moves;
-// Going for a genetic approach
-
-
 int orientation(const array<int, 2> &  p, const array<int, 2> &  q, const array<int, 2> &  r)
 {
 	int val = (q[0] - p[0]) * (r[1] - q[1]) -
 		(q[1] - p[1]) * (r[0] - q[0]);
 
-	if (val == 0) return 0;  // colinear
+	if (abs(val) < 10) return 0;  // colinear
 
 	return (val > 0) ? 1 : 2; // clock or counterclock wise
 }
@@ -68,7 +65,7 @@ bool collision(const array<int, 2> & terrain1, const array<int, 2> & terrain2, c
 {
 	// If slopes match, they don't collide
 	// This is a simplification, expand if needed
-	if (terrain2[1] == terrain1[1] || ship[1] == prevShip[1])
+	/*if (terrain2[1] == terrain1[1] || ship[1] == prevShip[1])
 	{
 	}
 
@@ -76,7 +73,7 @@ bool collision(const array<int, 2> & terrain1, const array<int, 2> & terrain2, c
 	else if ((terrain2[0] - terrain1[0]) / (terrain2[1] - terrain1[1]) == (ship[0] - prevShip[0]) / (ship[1] - prevShip[1]))
 	{
 		return false;
-	}
+	}*/
 
 	// Find the four orientations needed 
 	int o1 = orientation(terrain1, terrain2, ship);
@@ -114,8 +111,8 @@ struct Ship
 		float prevvSpeed = vSpeed;
 		hSpeed += thrust * sinMap[angle];
 		vSpeed += thrust * cosMap[angle] - 3.711f;
-		pos[0] += (vSpeed + prevvSpeed) / 2;
-		pos[1] += (hSpeed + prevhSpeed) / 2;
+		pos[0] += (vSpeed + prevvSpeed) / 2.0f + 0.5f;
+		pos[1] += (hSpeed + prevhSpeed) / 2.0f + 0.5f;
 		fuel -= thrust;
 	}
 };
@@ -132,118 +129,120 @@ struct Board
 		: terrain(terrain)
 	{}
 
-	SimResult randomSim()
+	SimResult randomSim(queue<Move> & prevBest)
 	{
 		// This simulates a game with random actions until it ends (ship collides with terrain)
 		bool finished = false;
-		bool first = true;
-		int move = 0;
-		Move firstMove(0, 0);
+		SimResult result;
 
 		int collisionSegment = -1;
 
 		while (!finished)
 		{
-			++move;
-			// Choose an action, start with angle
-			// Favor angles closer to 0
-			switch (ship.angle)
+			if (!prevBest.empty())
 			{
-			case -90:
-				dis.param({ 1,19 });
-				ship.angle += dis(gen) * 15;
-				break;
-			case -75:
-				dis.param({ 1,5,25 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case -60:
-				dis.param({ 1,4,16 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case -45:
-				dis.param({ 1,3,9 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case -30:
-				dis.param({ 1,2.5,5 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case -15:
-				dis.param({ 1,2,4 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case 0:
-				dis.param({ 1,2,1 });
-				ship.angle += (dis(gen) - 1) * 15;
-				break;
-			case 90:
-				dis.param({ 1,19 });
-				ship.angle -= dis(gen) * 15;
-				break;
-			case 75:
-				dis.param({ 1,5,25 });
-				ship.angle -= (dis(gen) - 1) * 15;
-				break;
-			case 60:
-				dis.param({ 1,4,16 });
-				ship.angle -= (dis(gen) - 1) * 15;
-				break;
-			case 45:
-				dis.param({ 1,3,9 });
-				ship.angle -= (dis(gen) - 1) * 15;
-				break;
-			case 30:
-				dis.param({ 1,2.5,5 });
-				ship.angle -= (dis(gen) - 1) * 15;
-				break;
-			case 15:
-				dis.param({ 1,2,4 });
-				ship.angle -= (dis(gen) - 1) * 15;
-				break;
-			default:
-				break;
+				ship.angle = prevBest.front().angle;
+				ship.thrust = prevBest.front().thrust;
+				prevBest.pop();
 			}
-
-			// Now choose thrust
-			// Favor higher thrust
-			if (ship.fuel <= 0) { ship.thrust = 0; }
 
 			else
 			{
-				switch (ship.thrust)
+				// Choose an action, start with angle
+				// Favor angles closer to 0
+				switch (ship.angle)
 				{
-				case 0:
-					dis.param({ 1,14 });
-					ship.thrust += dis(gen);
+				case -90:
+					dis.param({ 1,19 });
+					ship.angle += dis(gen) * 15;
 					break;
-				case 1:
-					dis.param({ 1,7, 49});
-					ship.thrust += dis(gen) - 1;
+				case -75:
+					dis.param({ 1,5,25 });
+					ship.angle += (dis(gen) - 1) * 15;
 					break;
-				case 2:
+				case -60:
 					dis.param({ 1,4,16 });
-					ship.thrust += dis(gen) - 1;
+					ship.angle += (dis(gen) - 1) * 15;
 					break;
-				case 3:
+				case -45:
+					dis.param({ 1,3,9 });
+					ship.angle += (dis(gen) - 1) * 15;
+					break;
+				case -30:
+					dis.param({ 1,2.5,5 });
+					ship.angle += (dis(gen) - 1) * 15;
+					break;
+				case -15:
 					dis.param({ 1,2,4 });
-					ship.thrust += dis(gen) - 1;
+					ship.angle += (dis(gen) - 1) * 15;
 					break;
-				case 4:
-					dis.param({ 4,1 });
-					ship.thrust -= dis(gen);
+				case 0:
+					dis.param({ 1,2,1 });
+					ship.angle += (dis(gen) - 1) * 15;
+					break;
+				case 90:
+					dis.param({ 1,19 });
+					ship.angle -= dis(gen) * 15;
+					break;
+				case 75:
+					dis.param({ 1,5,25 });
+					ship.angle -= (dis(gen) - 1) * 15;
+					break;
+				case 60:
+					dis.param({ 1,4,16 });
+					ship.angle -= (dis(gen) - 1) * 15;
+					break;
+				case 45:
+					dis.param({ 1,3,9 });
+					ship.angle -= (dis(gen) - 1) * 15;
+					break;
+				case 30:
+					dis.param({ 1,2.5,5 });
+					ship.angle -= (dis(gen) - 1) * 15;
+					break;
+				case 15:
+					dis.param({ 1,2,4 });
+					ship.angle -= (dis(gen) - 1) * 15;
 					break;
 				default:
 					break;
 				}
+
+				// Now choose thrust
+				// Favor higher thrust
+				if (ship.fuel <= 0) { ship.thrust = 0; }
+
+				else
+				{
+					switch (ship.thrust)
+					{
+					case 0:
+						dis.param({ 1,14 });
+						ship.thrust += dis(gen);
+						break;
+					case 1:
+						dis.param({ 1,7, 49 });
+						ship.thrust += dis(gen) - 1;
+						break;
+					case 2:
+						dis.param({ 1,4,16 });
+						ship.thrust += dis(gen) - 1;
+						break;
+					case 3:
+						dis.param({ 1,2,4 });
+						ship.thrust += dis(gen) - 1;
+						break;
+					case 4:
+						dis.param({ 4,1 });
+						ship.thrust -= dis(gen);
+						break;
+					default:
+						break;
+					}
+				}
 			}
 
-			if (first)
-			{
-				first = false;
-				firstMove.angle = ship.angle;
-				firstMove.thrust = ship.thrust;
-			}
+			result.moves.emplace(ship.thrust, ship.angle);
 
 			// Advance the state of the ship
 			array<int, 2> prevPos = ship.pos;
@@ -263,10 +262,8 @@ struct Board
 				{
 					if (collision(terrain.points[i - 1], terrain.points[i], ship.pos, prevPos))
 					{
-						// I should eventually check if I collided with the landing, since this is actually good
 						finished = true;
 						collisionSegment = i - 1;
-						//cerr << "I will collide with segment " << terrain.points[i - 1][1] << " " << terrain.points[i - 1][0] << " " << terrain.points[i][1] << " " << terrain.points[i][0] << " at move " << move << endl;
 						break;
 					}
 				}
@@ -274,10 +271,11 @@ struct Board
 		}
 
 		// Calculate the score of the position
-		float score = calculateScore(collisionSegment);
+		result.score = calculateScore(collisionSegment);
+		result.crashPoint = ship.pos;
 
 		// Return the info needed
-		return SimResult(firstMove, score);
+		return result;
 
 	}
 
@@ -319,7 +317,6 @@ random_device Board::rd;
 mt19937 Board::gen(rd());
 discrete_distribution<> Board::dis;
 
-
 int main()
 {
 	cosMap[-90] = 0.0f;
@@ -349,8 +346,6 @@ int main()
 	sinMap[45] = -0.7071f;
 	sinMap[30] = -0.5f;
 	sinMap[15] = -0.2588f;
-
-	set<SimResult, SimCmp> sortedResults;
 
 	Terrain terrain;
 	int surfaceN; // the number of points used to draw the surface of Mars.
@@ -397,14 +392,26 @@ int main()
 	bool first = true;
 	SimResult bestResult;
 
+	queue<Move> emptyQueue;
+	
 	// game loop is 1 second long
 	while (1) {
 
 		auto start = chrono::high_resolution_clock::now();
 		int sims = 0;
-		sortedResults.clear();
+		bestResult.score = -9999999999.0f;
 
 		cin >> X >> Y >> hSpeed >> vSpeed >> fuel >> rotate >> power; cin.ignore();
+
+		cerr << "angle " << board.ship.angle << " " << rotate << endl;
+		cerr << "thrust " << board.ship.thrust << " " << power << endl;
+		cerr << "Y " << board.ship.pos[0] << " " << Y << endl;
+		cerr << "X " << board.ship.pos[1] << " " << X << endl;
+		cerr << "hspeed " << board.ship.hSpeed << " " << hSpeed << endl;
+		cerr << "vspeed " << board.ship.vSpeed << " " << vSpeed << endl;
+		cerr << "fuel " << board.ship.fuel << " " << fuel << endl;
+
+
 		board.ship.angle = rotate;
 		board.ship.pos[0] = Y;
 		board.ship.pos[1] = X;
@@ -413,6 +420,8 @@ int main()
 		board.ship.fuel = fuel;
 		board.ship.thrust = power;
 
+
+
 		if (first)
 		{
 			board.ship.startingPos[0] = Y;
@@ -420,15 +429,22 @@ int main()
 			first = false;
 		}
 
-		bestResult.score = -99999999.0f;
-
+		bool firstSim = true;
 		while (std::chrono::duration_cast<std::chrono::milliseconds>(chrono::high_resolution_clock::now() - start).count() < 95)
 		{
 			++sims;
 
 			// Start by simulating an entire run using random actions
-			SimResult result = board.randomSim();
-			//sortedResults.insert(result);
+			SimResult result;
+			if (firstSim)
+			{
+				result = board.randomSim(bestResult.moves);
+				firstSim = false;
+			}
+			else
+			{
+				result = board.randomSim(emptyQueue);
+			}
 
 			if (result.score > bestResult.score)
 			{
@@ -445,9 +461,18 @@ int main()
 			board.ship.thrust = power;
 		}
 
+		// TEST
+
+		board.ship.angle = bestResult.moves.front().angle;
+		board.ship.thrust = bestResult.moves.front().thrust;
+		board.ship.advanceState();
+
+
 		// Execute the best move
 		cerr << sims << " sims" << endl;
-		//SimResult best = *(sortedResults.begin());
-		cout << bestResult.firstMove.angle << " " << bestResult.firstMove.thrust << endl;
+		cerr << "crash at " << bestResult.crashPoint[0] << " " << bestResult.crashPoint[1] << endl;
+		cout << bestResult.moves.front().angle << " " << bestResult.moves.front().thrust << endl;
+
+		bestResult.moves.pop();
 	}
 }
